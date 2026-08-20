@@ -16,7 +16,8 @@
 - **파일 구조 변경 금지.** `config.py` / `fetch.py` / `stats.py` / `card.py` / `bot.py` / `web.py`
   파일을 쪼개거나 합치거나 새로 만들지 않는다. 필요하면 먼저 물어본다.
 - **새 라이브러리 설치 금지.** 사용 중: `requests`, `Pillow`, `python-dotenv`, `discord.py`, `Flask`
-  다른 것이 필요하면 먼저 물어본다.
+  다른 것이 필요하면 먼저 물어본다. 정말 필요하면 이 목록과 `requirements.txt`를 함께 수정하도록 제안한다.
+  **설치(`pip install`)는 직접 실행하지 않고 사용자에게 맡긴다. <설치 가이드는 제시를 해준다.>**
 - **`.env` 파일을 읽거나 출력하지 않는다.** 값은 `os.getenv()`로만 접근한다.
 - 아래는 이 프로젝트에서 만들지 않는다: 로그인/OAuth, 데이터베이스, 웹훅,
   게임 시스템(던전·아이템), 배포 설정, 테스트 코드.
@@ -29,7 +30,7 @@
 - 기능을 먼저 완성한 뒤 다듬는다. 처음부터 예외 처리를 촘촘히 넣지 않는다.
 - 에러를 `try/except: pass`로 덮지 않는다. 원인을 찾아 알린다.
 - 파일을 수정한 뒤에는 **터미널에서 실행해 확인하는 방법**을 함께 알려준다.
-  (예: `python fetch.py facebook/react` → `cache/` 에 JSON 생성 확인)
+  (예: `python fetch.py il-yeon-glitch/askme-project` → `cache/` 에 JSON 생성 확인)
 
 ## 코드 스타일
 

@@ -76,6 +76,9 @@ repo_from_cache_name()  파일 이름 → owner/repo
 
 ## 실행 순서 (처음부터 끝까지)
 
+> **처음 pull 받았다면 먼저 가상환경부터 만든다.** `.venv`는 커밋되지 않으므로 각자 만들어야 한다.
+> 방법은 [연결확인.md](연결확인.md)의 "0. 준비" 참고 (`python -m venv .venv` → activate → `pip install -r requirements.txt`).
+
 ```bash
 # 0. 연결 확인 (처음 한 번만)
 python check_github.py
