@@ -15,12 +15,16 @@ from config import (
     STAT_NAMES,
     CARD_WIDTH, CARD_HEIGHT, CARD_PADDING,
     CARD_BG, CARD_TEXT, CARD_SUB, CARD_BAR_BG,
-    FONT_PATH, FONT_SIZE_NAME, FONT_SIZE_LEVEL, FONT_SIZE_STAT,
+    FONT_PATH, FONT_SIZE_NAME, FONT_SIZE_LEVEL, FONT_SIZE_STAT, FONT_SIZE_POSITION,
+    NAME_STROKE_WIDTH, POSITION_STROKE_WIDTH,
     AVATAR_SIZE, AVATAR_TOP, NAME_TOP, LEVEL_TOP,
     STAT_TOP, STAT_ROW_HEIGHT, BAR_HEIGHT, BAR_MAX,
     CARD_DIR,
-    GRADE_BG, GRADE_ACCENT, GRADE_BORDER_WIDTH, GRADE_BORDER_RINGS,
+    GRADE_BG, GRADE_BG_BOTTOM, GRADE_ACCENT, GRADE_BORDER_WIDTH, GRADE_BORDER_RINGS,
     GRADE_BADGE_SIZE, GRADE_BADGE_MARGIN, GRADE_BADGE_FONT_SIZE,
+    GRADE_BADGE_TEXT_COLOR, GRADE_BADGE_STROKE_WIDTH,
+    STAT_TEXT_STROKE_COLOR, STAT_TEXT_STROKE_WIDTH, STAT_LABEL_COLOR,
+    BAR_OUTLINE_COLOR, BAR_OUTLINE_WIDTH,
     POSITION_TOP,
 )
 from fetch import CACHE_DIR, load_cache, normalize_repo, cache_path, repo_from_cache_name
@@ -44,6 +48,29 @@ def make_circle_mask(size):
     return mask
 
 
+# 카드 배경을 그린다. GRADE_BG_BOTTOM 에 등급이 있으면 위(GRADE_BG)에서
+# 아래(GRADE_BG_BOTTOM)로 점점 밝아지는 그러데이션을 그리고, 없으면 기존처럼
+# 한 가지 색으로 칠한다.
+def draw_background(grade):
+    top = GRADE_BG[grade]
+    bottom = GRADE_BG_BOTTOM.get(grade)
+
+    if bottom is None:
+        return Image.new("RGB", (CARD_WIDTH, CARD_HEIGHT), top)
+
+    # 세로 1픽셀짜리 그러데이션을 만든 뒤 카드 폭만큼 옆으로 늘린다.
+    # 한 줄씩 색을 섞어 만들면 늘렸을 때도 자연스럽게 이어진다.
+    gradient = Image.new("RGB", (1, CARD_HEIGHT))
+    for y in range(CARD_HEIGHT):
+        t = y / (CARD_HEIGHT - 1)
+        r = int(top[0] + (bottom[0] - top[0]) * t)
+        g = int(top[1] + (bottom[1] - top[1]) * t)
+        b = int(top[2] + (bottom[2] - top[2]) * t)
+        gradient.putpixel((0, y), (r, g, b))
+
+    return gradient.resize((CARD_WIDTH, CARD_HEIGHT))
+
+
 # 카드 테두리를 등급에 맞게 그린다. 등급이 높을수록 굵고 겹이 많아 화려해 보인다.
 def draw_border(draw, grade):
     color = GRADE_ACCENT[grade]
@@ -60,7 +87,8 @@ def draw_border(draw, grade):
 
 
 # 카드 왼쪽 위에 등급 글자가 적힌 뱃지(원)를 그린다.
-def draw_grade_badge(draw, grade, font_badge):
+# 글자 크기·색은 등급별로 다르다 (S 는 더 크고 빨간 글자).
+def draw_grade_badge(draw, grade):
     color = GRADE_ACCENT[grade]
     x0 = GRADE_BADGE_MARGIN
     y0 = GRADE_BADGE_MARGIN
@@ -71,8 +99,15 @@ def draw_grade_badge(draw, grade, font_badge):
 
     cx = (x0 + x1) // 2
     cy = (y0 + y1) // 2
-    # 뱃지 색이 밝은 등급색이라, 글자는 카드 배경색(어두운 색)으로 찍어야 잘 보인다.
-    draw.text((cx, cy), grade, font=font_badge, fill=CARD_BG, anchor="mm")
+    font_badge = ImageFont.truetype(FONT_PATH, GRADE_BADGE_FONT_SIZE[grade])
+    text_color = GRADE_BADGE_TEXT_COLOR[grade]
+
+    # Pillow 에는 "굵게" 폰트 옵션이 없어서, 글자 테두리(stroke)를 같은 색으로
+    # 덧그려 획을 두껍게 보이게 만든다. stroke_width 가 0 이면 그냥 원래 굵기다.
+    draw.text(
+        (cx, cy), grade, font=font_badge, fill=text_color, anchor="mm",
+        stroke_width=GRADE_BADGE_STROKE_WIDTH[grade], stroke_fill=text_color,
+    )
 
 
 # 카드 한 장을 그려서 이미지를 돌려준다. 파일로 저장하지는 않는다.
@@ -85,14 +120,14 @@ def draw_card(person, stats, level):
     position = calc_position(stats)
     accent = GRADE_ACCENT[grade]
 
-    card = Image.new("RGB", (CARD_WIDTH, CARD_HEIGHT), GRADE_BG[grade])
+    card = draw_background(grade)
     draw = ImageDraw.Draw(card)
 
     # 폰트는 크기별로 따로 불러와야 한다. 한 번 만든 폰트의 크기는 못 바꾼다.
     font_name = ImageFont.truetype(FONT_PATH, FONT_SIZE_NAME)
     font_level = ImageFont.truetype(FONT_PATH, FONT_SIZE_LEVEL)
     font_stat = ImageFont.truetype(FONT_PATH, FONT_SIZE_STAT)
-    font_badge = ImageFont.truetype(FONT_PATH, GRADE_BADGE_FONT_SIZE)
+    font_position = ImageFont.truetype(FONT_PATH, FONT_SIZE_POSITION)
 
     draw_border(draw, grade)
 
@@ -107,17 +142,35 @@ def draw_card(person, stats, level):
     avatar_x = (CARD_WIDTH - AVATAR_SIZE) // 2
     card.paste(avatar, (avatar_x, AVATAR_TOP), make_circle_mask(AVATAR_SIZE))
 
+    # S 처럼 배경이 밝은 등급은 연한 글자·같은 색 계열 막대가 배경에 묻힌다.
+    # 그런 등급만 어두운 테두리를 덧그려서 구분되게 한다 (없는 등급은 0/None → 기존과 동일).
+    stat_stroke_width = STAT_TEXT_STROKE_WIDTH.get(grade, 0)
+    stat_stroke_color = STAT_TEXT_STROKE_COLOR.get(grade)
+    bar_outline_color = BAR_OUTLINE_COLOR.get(grade)
+    bar_outline_width = BAR_OUTLINE_WIDTH.get(grade, 0)
+    stat_label_color = STAT_LABEL_COLOR.get(grade, CARD_SUB)
+
     # --- 이름과 레벨 ---
     # anchor="mm" 은 "이 좌표가 글자의 한가운데" 라는 뜻이다.
     # 글자 폭을 재서 직접 가운데를 맞출 필요가 없어진다.
-    draw.text((CARD_WIDTH // 2, NAME_TOP), person["login"],
-              font=font_name, fill=CARD_TEXT, anchor="mm")
-    draw.text((CARD_WIDTH // 2, LEVEL_TOP), f"Lv. {level}",
-              font=font_level, fill=accent, anchor="mm")
+    # 이름·포지션은 등급 상관없이 항상 같은 굵기로 그린다 (S 도 A~D 와 동일한 스타일).
+    draw.text(
+        (CARD_WIDTH // 2, NAME_TOP), person["login"],
+        font=font_name, fill=CARD_TEXT, anchor="mm",
+        stroke_width=NAME_STROKE_WIDTH, stroke_fill=CARD_TEXT,
+    )
+    draw.text(
+        (CARD_WIDTH // 2, LEVEL_TOP), f"Lv. {level}",
+        font=font_level, fill=accent, anchor="mm",
+        stroke_width=stat_stroke_width, stroke_fill=stat_stroke_color,
+    )
 
     # --- 포지션 (제일 높은 능력치로 정한 이름) ---
-    draw.text((CARD_WIDTH // 2, POSITION_TOP), position,
-              font=font_stat, fill=CARD_SUB, anchor="mm")
+    draw.text(
+        (CARD_WIDTH // 2, POSITION_TOP), position,
+        font=font_position, fill=CARD_TEXT, anchor="mm",
+        stroke_width=POSITION_STROKE_WIDTH, stroke_fill=CARD_TEXT,
+    )
 
     # --- 능력치 막대 ---
     bar_width = CARD_WIDTH - CARD_PADDING * 2
@@ -127,31 +180,45 @@ def draw_card(person, stats, level):
         value = stats[key]
 
         # 능력치 이름은 왼쪽, 값은 오른쪽에 붙인다.
-        draw.text((CARD_PADDING, y), STAT_NAMES[key],
-                  font=font_stat, fill=CARD_SUB, anchor="lm")
-        draw.text((CARD_WIDTH - CARD_PADDING, y), str(value),
-                  font=font_stat, fill=CARD_TEXT, anchor="rm")
+        draw.text(
+            (CARD_PADDING, y), STAT_NAMES[key],
+            font=font_stat, fill=stat_label_color, anchor="lm",
+            stroke_width=stat_stroke_width, stroke_fill=stat_stroke_color,
+        )
+        draw.text(
+            (CARD_WIDTH - CARD_PADDING, y), str(value),
+            font=font_stat, fill=CARD_TEXT, anchor="rm",
+            stroke_width=stat_stroke_width, stroke_fill=stat_stroke_color,
+        )
 
         # 막대는 두 번 그린다. 빈 막대를 먼저 깔고, 그 위에 값만큼 덮는다.
         bar_y = y + 25
-        draw.rectangle(
-            [CARD_PADDING, bar_y, CARD_PADDING + bar_width, bar_y + BAR_HEIGHT],
-            fill=CARD_BAR_BG,
-        )
+
+        if bar_outline_width > 0:
+            draw.rectangle(
+                [CARD_PADDING, bar_y, CARD_PADDING + bar_width, bar_y + BAR_HEIGHT],
+                fill=CARD_BAR_BG, outline=bar_outline_color, width=bar_outline_width,
+            )
+        else:
+            draw.rectangle(
+                [CARD_PADDING, bar_y, CARD_PADDING + bar_width, bar_y + BAR_HEIGHT],
+                fill=CARD_BAR_BG,
+            )
 
         # BAR_MAX 를 넘으면 꽉 찬 막대로 자른다.
         ratio = min(value / BAR_MAX, 1.0)
         if ratio > 0:
-            draw.rectangle(
-                [CARD_PADDING, bar_y, CARD_PADDING + int(bar_width * ratio), bar_y + BAR_HEIGHT],
-                fill=accent,
-            )
+            fill_box = [CARD_PADDING, bar_y, CARD_PADDING + int(bar_width * ratio), bar_y + BAR_HEIGHT]
+            if bar_outline_width > 0:
+                draw.rectangle(fill_box, fill=accent, outline=bar_outline_color, width=bar_outline_width)
+            else:
+                draw.rectangle(fill_box, fill=accent)
 
         y += STAT_ROW_HEIGHT
 
     # 뱃지는 맨 마지막에 그린다. 능력치 막대보다 위(왼쪽 위)라 겹치지 않지만,
     # 순서를 맨 뒤에 둬야 다른 무언가가 실수로 뱃지를 덮어 그리는 일이 없다.
-    draw_grade_badge(draw, grade, font_badge)
+    draw_grade_badge(draw, grade)
 
     return card
 
