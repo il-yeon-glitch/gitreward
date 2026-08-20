@@ -96,6 +96,40 @@ PAGE = """
   h1 { margin: 0 0 4px; font-size: 28px; }
   .sub { color: {{ sub }}; font-size: 14px; margin-bottom: 28px; }
 
+  nav { margin-bottom: 28px; }
+  nav a { font-size: 20px; font-weight: bold; margin-right: 24px; }
+
+  /* 홈 화면만 이 클래스를 써서 정중앙에 놓는다. */
+  .hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 70vh;
+  }
+
+  form { margin-bottom: 28px; }
+  input {
+    background: {{ barbg }};
+    color: {{ text }};
+    border: none;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    width: 240px;
+  }
+  button {
+    background: {{ accent }};
+    color: {{ bg }};
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    margin-left: 8px;
+    cursor: pointer;
+  }
+
   /* 여기 한 줄만 바꾸면 나열도 되고 두 장 나란히도 된다. */
   .grid {
     display: grid;
@@ -108,38 +142,71 @@ PAGE = """
   .name { margin-top: 10px; font-size: 16px; }
   .meta { color: {{ sub }}; font-size: 12px; margin-top: 2px; }
   .empty { color: {{ sub }}; }
-  footer { color: {{ sub }}; font-size: 12px; margin-top: 36px; }
 </style>
 </head>
 <body>
-  <h1>{{ title }}</h1>
-  <div class="sub">{{ subtitle }}</div>
+  <nav>
+    <a href="/">홈</a>
+    <a href="/all">전체 순위</a>
+  </nav>
 
-  {% if message %}
-    <p class="empty">{{ message }}</p>
+  {% if home %}
+    <div class="hero">
+      <h1>{{ title }}</h1>
+      <div class="sub">{{ subtitle }}</div>
+
+      <form onsubmit="location.href = '/project/' + document.getElementById('repo-input').value.trim(); return false;">
+        <input id="repo-input" type="text" placeholder="owner/repo">
+        <button type="submit">프로젝트 보기</button>
+      </form>
+    </div>
+  {% else %}
+    <h1>{{ title }}</h1>
+    <div class="sub">{{ subtitle }}</div>
+
+    <form onsubmit="location.href = '/project/' + document.getElementById('repo-input').value.trim(); return false;">
+      <input id="repo-input" type="text" placeholder="owner/repo">
+      <button type="submit">프로젝트 보기</button>
+    </form>
+
+    {% if message %}
+      <p class="empty">{{ message }}</p>
+    {% endif %}
+
+    <div class="grid">
+      {% for p in people %}
+        <div class="item">
+          <img src="{{ url_for('static', filename=p.file, v=p.v) }}" alt="{{ p.login }}">
+          <div class="name">{{ p.login }} &middot; Lv.{{ p.level }}</div>
+          <div class="meta">{{ p.repo }}</div>
+        </div>
+      {% endfor %}
+    </div>
   {% endif %}
-
-  <div class="grid">
-    {% for p in people %}
-      <div class="item">
-        <img src="{{ url_for('static', filename=p.file, v=p.v) }}" alt="{{ p.login }}">
-        <div class="name">{{ p.login }} &middot; Lv.{{ p.level }}</div>
-        <div class="meta">{{ p.repo }}</div>
-      </div>
-    {% endfor %}
-  </div>
-
-  <footer>
-    <a href="/">순위</a> &nbsp;|&nbsp;
-    카드 두 장 나란히 보기: <code>/vs/아이디A/아이디B</code>
-  </footer>
 </body>
 </html>
 """
 
 
+# 홈 화면. 카드를 하나도 안 불러온다 — cache/ 가 커지면 전부 그리는 데
+# 오래 걸리는데, 여기서는 그럴 필요가 없다. 저장소 주소를 넣는 창만 보여준다.
 @app.route("/")
 def index():
+    return render_template_string(
+        PAGE,
+        title="Git Reward",
+        subtitle="저장소 주소(owner/repo)를 넣으면 카드를 볼 수 있다",
+        people=[],
+        columns="repeat(auto-fill, minmax(260px, 1fr))",
+        message=None,
+        home=True,
+        **COLORS,
+    )
+
+
+# 전체 순위. 예전 "/" 가 하던 일을 그대로 옮겼다.
+@app.route("/all")
+def all_projects():
     people = load_people()
 
     message = None

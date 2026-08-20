@@ -108,8 +108,6 @@ def draw_card(person, stats, level):
 # 카드를 그려서 static/ 에 저장하고, 저장한 경로를 돌려준다.
 # 터미널에서 눈으로 확인할 때와 web.py 가 쓴다.
 def make_card(person, stats, level, repo):
-    card = draw_card(person, stats, level)
-
     # 폴더가 없으면 파일을 못 만든다.
     os.makedirs(CARD_DIR, exist_ok=True)
 
@@ -117,6 +115,15 @@ def make_card(person, stats, level, repo):
     # 나중에 만든 카드가 앞의 것을 덮어써서, 한 명당 한 장만 남는다.
     name = f"{repo.replace('/', '_')}_{person['login']}.png"
     path = os.path.join(CARD_DIR, name)
+
+    # 이미 만든 카드가 있으면 다시 그리지 않는다. draw_card() 가 아바타를
+    # GitHub 에서 매번 새로 받아오기 때문에, 저장소가 몇 개만 쌓여도
+    # web.py 가 새로고침될 때마다 수십~수백 번 요청을 보내 느려진다.
+    # config.py 값을 바꾸고 바로 확인하고 싶으면 static/ 을 지우고 새로고침한다.
+    if os.path.exists(path):
+        return path
+
+    card = draw_card(person, stats, level)
     card.save(path)
 
     return path
