@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 import fetch
 from stats import calc_stats, calc_level
 from card import draw_card
+from config import WEB_BASE_URL
 
 load_dotenv()
 
@@ -94,6 +95,50 @@ async def card_command(interaction, repo: str, login: str):
         content=f"**{person['login']}** · Lv.{level} · `{repo}`",
         file=discord.File(buf, filename=f"{person['login']}.png"),
     )
+
+
+@tree.command(name="등록", description="깃허브 저장소를 새로 받아온다", guild=GUILD)
+@app_commands.describe(repo="저장소 주소 (owner/repo)")
+async def register_command(interaction, repo: str):
+    # /card 와 같은 이유로 defer() 부터 부른다. get_contributors() 가 몇 초 걸릴 수 있다.
+    await interaction.response.defer()
+
+    people = fetch.get_contributors(repo)
+    if people is None:
+        await interaction.followup.send(
+            f"`{repo}` 를 가져오지 못했다. 주소가 맞는지, 비공개 저장소가 아닌지 확인한다."
+        )
+        return
+
+    # 입력한 형태(주소, .git 등)와 상관없이 정리된 이름으로 안내한다.
+    normalized = fetch.normalize_repo(repo)
+
+    await interaction.followup.send(
+        f"등록 완료! `{normalized}` (참여자 {len(people)}명)\n"
+        f"웹에서 보기: {WEB_BASE_URL}/project/{normalized}"
+    )
+
+
+@tree.command(name="목록", description="지금까지 등록된 저장소 목록을 보여준다", guild=GUILD)
+async def list_command(interaction):
+    await interaction.response.defer()
+
+    if not os.path.exists(fetch.CACHE_DIR):
+        await interaction.followup.send("등록된 저장소가 없다. `/등록` 으로 먼저 추가한다.")
+        return
+
+    # web.py 의 load_people() 과 같은 방식으로 cache/ 를 훑는다.
+    names = [n for n in os.listdir(fetch.CACHE_DIR) if n.endswith(".json")]
+    if not names:
+        await interaction.followup.send("등록된 저장소가 없다. `/등록` 으로 먼저 추가한다.")
+        return
+
+    lines = []
+    for name in sorted(names):
+        repo = fetch.repo_from_cache_name(name)
+        lines.append(f"`{repo}` — {WEB_BASE_URL}/project/{repo}")
+
+    await interaction.followup.send("등록된 저장소:\n" + "\n".join(lines))
 
 
 @bot.event
