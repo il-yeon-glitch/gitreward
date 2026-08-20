@@ -141,6 +141,20 @@ async def list_command(interaction):
     await interaction.followup.send("등록된 저장소:\n" + "\n".join(lines))
 
 
+@tree.command(name="help", description="사용할 수 있는 명령어 목록을 보여준다", guild=GUILD)
+async def help_command(interaction):
+    await interaction.response.defer()
+
+    # -- 디스코드 봇이 추가될 때마다 자동으로 이 부분을 채운다 --
+    # 명령을 새로 추가해도 여기를 따로 고칠 필요가 없다. tree 에 등록된
+    # 명령들의 name/description 을 그대로 읽어오기 때문이다 (description 은
+    # 각 명령의 @tree.command(...) 에 이미 적혀 있다. 두 곳에 적지 않는다).
+    commands = sorted(tree.get_commands(guild=GUILD), key=lambda c: c.name)
+    lines = [f"/{cmd.name} - {cmd.description}" for cmd in commands]
+
+    await interaction.followup.send("사용할 수 있는 명령어:\n" + "\n".join(lines))
+
+
 @bot.event
 async def on_ready():
     print()
@@ -176,3 +190,4 @@ async def on_ready():
 # 봇을 켠다. 이 줄에서 멈춘 채로 계속 돈다.
 # 끌 때 RuntimeError: Event loop is closed 가 뜨는 건 윈도우에서 나오는 무해한 메시지다.
 bot.run(TOKEN)
+

@@ -36,7 +36,7 @@ COLORS = {
 # cache/ 를 전부 읽어 사람 목록을 만들고, 각자의 카드를 static/ 에 만든다.
 # 새로고침할 때마다 카드를 다시 만든다. config.py 의 계수를 바꾸고
 # 브라우저를 새로고침하면 바로 반영되니 밸런스를 맞출 때 편하다.
-def load_people():
+def load_people(only_repo=None):
     people = []
 
     if not os.path.exists(CACHE_DIR):
@@ -48,6 +48,10 @@ def load_people():
 
         # 파일 이름에서 저장소 이름을 되돌린다. 카드 파일명에 넣어야 한다.
         repo = repo_from_cache_name(name)
+
+        # only_repo 가 있으면 그 저장소 하나만 남긴다. /project/<owner>/<repo> 가 쓴다.
+        if only_repo is not None and repo != only_repo:
+            continue
 
         for person in load_cache(os.path.join(CACHE_DIR, name)):
             stats = calc_stats(person)
@@ -186,6 +190,27 @@ def vs(a, b):
         people=picked,
         # 두 칸으로 고정한다.
         columns="repeat(2, minmax(0, 1fr))",
+        message=message,
+        **COLORS,
+    )
+
+
+# 저장소 하나만 골라 보여주는 자리. bot.py 의 /등록, /목록 이 안내하는 링크가 여기로 온다.
+@app.route("/project/<owner>/<repo>")
+def project(owner, repo):
+    combined = f"{owner}/{repo}"
+    people = load_people(only_repo=combined)
+
+    message = None
+    if not people:
+        message = f"{combined} 를 찾을 수 없다. 먼저 디스코드에서 /등록 으로 추가한다."
+
+    return render_template_string(
+        PAGE,
+        title=combined,
+        subtitle=f"참여자 {len(people)}명 · 레벨 순",
+        people=people,
+        columns="repeat(auto-fill, minmax(260px, 1fr))",
         message=message,
         **COLORS,
     )
