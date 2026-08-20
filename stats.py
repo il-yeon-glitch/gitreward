@@ -5,9 +5,13 @@
 #   python stats.py octocat/Hello-World   # 한 저장소만
 
 import os
+import random
 import sys
 
-from config import STAT_WEIGHTS, LEVEL_DIVISOR, STAT_MAX
+from config import (
+    STAT_WEIGHTS, LEVEL_DIVISOR, STAT_MAX,
+    GRADE_LEVEL_RANGES, POSITION_NAMES,
+)
 
 # fetch.py 의 것을 그대로 쓴다. 읽는 방법을 두 벌 만들면 한쪽만 고치는 실수가 난다.
 # load_cache 는 utf-8 을 지정해서 읽는다. 직접 open() 하면 한글 윈도우에서 깨진다.
@@ -41,12 +45,31 @@ def calc_level(stats):
     return max(1, int(total / LEVEL_DIVISOR))
 
 
+# 레벨로 등급을 낸다. 범위는 config.py 의 GRADE_LEVEL_RANGES 에 있다.
+def calc_grade(level):
+    for low, high, grade in GRADE_LEVEL_RANGES:
+        if low <= level <= high:
+            return grade
+
+    # 이론상 레벨은 1~49 를 못 벗어난다(능력치 4개 다 99 여도 396÷8=49).
+    # 그래도 범위를 벗어나면 가장 가까운 쪽 등급으로 맞춘다.
+    return GRADE_LEVEL_RANGES[0][2] if level < GRADE_LEVEL_RANGES[0][0] else GRADE_LEVEL_RANGES[-1][2]
+
+
+# 가장 높은 능력치로 포지션을 정한다. 여러 능력치가 똑같이 1등이면 랜덤으로 고른다.
+def calc_position(stats):
+    best = max(stats.values())
+    candidates = [key for key, value in stats.items() if value == best]
+    key = random.choice(candidates)
+    return POSITION_NAMES[key]
+
+
 # 한 저장소의 사람들을 표로 찍는다. 계수를 눈으로 보고 조정하려고 만든 것이다.
 # 왼쪽은 GitHub 에서 받은 원래 기록, 오른쪽은 환산한 능력치다. 같이 봐야 계수가 보인다.
 def print_table(title, people):
     print(f"=== {title}  ({len(people)}명) ===")
-    print("login                 커밋     추가     삭제   주 |  ATK  DEF  AGI  STA |  합계   Lv")
-    print("-" * 78)
+    print("login                 커밋     추가     삭제   주 |  ATK  DEF  AGI  STA |  합계   Lv  등급  포지션")
+    print("-" * 96)
 
     rows = []
     for p in people:
@@ -61,6 +84,8 @@ def print_table(title, people):
     for p, stats, level in rows:
         total = sum(stats.values())
         levels.append(level)
+        grade = calc_grade(level)
+        position = calc_position(stats)
 
         # 능력치가 STAT_MAX 에서 잘렸으면 표시한다. 계수가 너무 큰지 보는 단서다.
         mark = "  <- 상한에 걸림" if max(stats.values()) >= STAT_MAX else ""
@@ -77,6 +102,8 @@ def print_table(title, people):
             f"{stats['STA']:>5} |"
             f"{total:>6}"
             f"{level:>5}"
+            f"   {grade:<4}"
+            f"{position:<6}"
             f"{mark}"
         )
 

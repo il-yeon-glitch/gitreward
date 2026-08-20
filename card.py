@@ -14,14 +14,17 @@ from PIL import Image, ImageDraw, ImageFont
 from config import (
     STAT_NAMES,
     CARD_WIDTH, CARD_HEIGHT, CARD_PADDING,
-    CARD_BG, CARD_ACCENT, CARD_TEXT, CARD_SUB, CARD_BAR_BG,
+    CARD_BG, CARD_TEXT, CARD_SUB, CARD_BAR_BG,
     FONT_PATH, FONT_SIZE_NAME, FONT_SIZE_LEVEL, FONT_SIZE_STAT,
     AVATAR_SIZE, AVATAR_TOP, NAME_TOP, LEVEL_TOP,
     STAT_TOP, STAT_ROW_HEIGHT, BAR_HEIGHT, BAR_MAX,
     CARD_DIR,
+    GRADE_BG, GRADE_ACCENT, GRADE_BORDER_WIDTH, GRADE_BORDER_RINGS,
+    GRADE_BADGE_SIZE, GRADE_BADGE_MARGIN, GRADE_BADGE_FONT_SIZE,
+    POSITION_TOP,
 )
 from fetch import CACHE_DIR, load_cache, normalize_repo, cache_path, repo_from_cache_name
-from stats import calc_stats, calc_level
+from stats import calc_stats, calc_level, calc_grade, calc_position
 
 
 # 프로필 이미지를 받아 카드에 넣을 크기로 줄인다.
@@ -41,17 +44,57 @@ def make_circle_mask(size):
     return mask
 
 
+# 카드 테두리를 등급에 맞게 그린다. 등급이 높을수록 굵고 겹이 많아 화려해 보인다.
+def draw_border(draw, grade):
+    color = GRADE_ACCENT[grade]
+    width = GRADE_BORDER_WIDTH[grade]
+    rings = GRADE_BORDER_RINGS[grade]
+
+    for i in range(rings):
+        inset = i * (width + 4)
+        draw.rectangle(
+            [inset, inset, CARD_WIDTH - 1 - inset, CARD_HEIGHT - 1 - inset],
+            outline=color,
+            width=width,
+        )
+
+
+# 카드 왼쪽 위에 등급 글자가 적힌 뱃지(원)를 그린다.
+def draw_grade_badge(draw, grade, font_badge):
+    color = GRADE_ACCENT[grade]
+    x0 = GRADE_BADGE_MARGIN
+    y0 = GRADE_BADGE_MARGIN
+    x1 = x0 + GRADE_BADGE_SIZE
+    y1 = y0 + GRADE_BADGE_SIZE
+
+    draw.ellipse([x0, y0, x1, y1], fill=color)
+
+    cx = (x0 + x1) // 2
+    cy = (y0 + y1) // 2
+    # 뱃지 색이 밝은 등급색이라, 글자는 카드 배경색(어두운 색)으로 찍어야 잘 보인다.
+    draw.text((cx, cy), grade, font=font_badge, fill=CARD_BG, anchor="mm")
+
+
 # 카드 한 장을 그려서 이미지를 돌려준다. 파일로 저장하지는 않는다.
 # person 은 fetch.py 가 만든 딕셔너리, stats 와 level 은 stats.py 가 만든 값이다.
+# 등급과 포지션은 여기서 직접 계산한다. bot.py / web.py 를 안 건드리려고
+# draw_card(person, stats, level) 시그니처는 그대로 두었다.
 # bot.py 는 파일을 만들지 않고 메모리로 바로 보내야 해서 이 함수를 쓴다.
 def draw_card(person, stats, level):
-    card = Image.new("RGB", (CARD_WIDTH, CARD_HEIGHT), CARD_BG)
+    grade = calc_grade(level)
+    position = calc_position(stats)
+    accent = GRADE_ACCENT[grade]
+
+    card = Image.new("RGB", (CARD_WIDTH, CARD_HEIGHT), GRADE_BG[grade])
     draw = ImageDraw.Draw(card)
 
     # 폰트는 크기별로 따로 불러와야 한다. 한 번 만든 폰트의 크기는 못 바꾼다.
     font_name = ImageFont.truetype(FONT_PATH, FONT_SIZE_NAME)
     font_level = ImageFont.truetype(FONT_PATH, FONT_SIZE_LEVEL)
     font_stat = ImageFont.truetype(FONT_PATH, FONT_SIZE_STAT)
+    font_badge = ImageFont.truetype(FONT_PATH, GRADE_BADGE_FONT_SIZE)
+
+    draw_border(draw, grade)
 
     # --- 프로필 이미지 (원형) ---
     try:
@@ -70,7 +113,11 @@ def draw_card(person, stats, level):
     draw.text((CARD_WIDTH // 2, NAME_TOP), person["login"],
               font=font_name, fill=CARD_TEXT, anchor="mm")
     draw.text((CARD_WIDTH // 2, LEVEL_TOP), f"Lv. {level}",
-              font=font_level, fill=CARD_ACCENT, anchor="mm")
+              font=font_level, fill=accent, anchor="mm")
+
+    # --- 포지션 (제일 높은 능력치로 정한 이름) ---
+    draw.text((CARD_WIDTH // 2, POSITION_TOP), position,
+              font=font_stat, fill=CARD_SUB, anchor="mm")
 
     # --- 능력치 막대 ---
     bar_width = CARD_WIDTH - CARD_PADDING * 2
@@ -97,10 +144,14 @@ def draw_card(person, stats, level):
         if ratio > 0:
             draw.rectangle(
                 [CARD_PADDING, bar_y, CARD_PADDING + int(bar_width * ratio), bar_y + BAR_HEIGHT],
-                fill=CARD_ACCENT,
+                fill=accent,
             )
 
         y += STAT_ROW_HEIGHT
+
+    # 뱃지는 맨 마지막에 그린다. 능력치 막대보다 위(왼쪽 위)라 겹치지 않지만,
+    # 순서를 맨 뒤에 둬야 다른 무언가가 실수로 뱃지를 덮어 그리는 일이 없다.
+    draw_grade_badge(draw, grade, font_badge)
 
     return card
 
