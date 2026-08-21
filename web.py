@@ -19,7 +19,7 @@ from config import (
 )
 from fetch import CACHE_DIR, load_cache, repo_from_cache_name
 from stats import calc_stats, calc_level, calc_grade
-from card import make_card
+from card import make_card, card_stats
 
 # Flask 는 static/ 폴더를 자동으로 웹에 열어준다.
 # config.py 의 CARD_DIR 이 "static" 이라, 만든 카드가 그대로 주소를 갖게 된다.
@@ -65,8 +65,9 @@ def load_people(only_repo=None):
             continue
 
         for person in load_cache(os.path.join(CACHE_DIR, name)):
-            stats = calc_stats(person)
-            level = calc_level(stats)
+            # 레벨은 기여 기록에서, 카드에 그릴 HP/ATK/DEF 는 레벨 + 배분 포인트에서 나온다.
+            level = calc_level(calc_stats(person))
+            stats = card_stats(person, level, repo)
             path = make_card(person, stats, level, repo)
 
             people.append({
@@ -288,41 +289,8 @@ def all_projects():
     )
 
 
-# 카드 두 장을 나란히 놓는 자리. 결투 규칙(승패)은 아직 없다.
-# 레이아웃만 미리 잡아두는 것이라, 지금은 두 장을 골라 보여주기만 한다.
-@app.route("/vs/<a>/<b>")
-def vs(a, b):
-    people = load_people()
-
-    picked = []
-    missing = []
-
-    for want in (a, b):
-        found = None
-        for p in people:
-            if p["login"].lower() == want.lower():
-                found = p
-                break
-
-        if found is None:
-            missing.append(want)
-        else:
-            picked.append(found)
-
-    message = None
-    if missing:
-        message = f"찾을 수 없다: {', '.join(missing)}"
-
-    return render_template_string(
-        PAGE,
-        title="카드 비교",
-        subtitle="승패 규칙은 아직 없다. 나란히 놓기만 한다.",
-        people=picked,
-        # 두 칸으로 고정한다.
-        columns="repeat(2, minmax(0, 1fr))",
-        message=message,
-        **COLORS,
-    )
+# 카드 두 장을 나란히 놓던 /vs/<a>/<b> 는 2026-08-21 기획 결정으로 없앴다.
+# 카드 결투가 기획에서 빠지면서 이 자리를 쓸 일이 없어졌다.
 
 
 # 저장소 하나만 골라 보여주는 자리. bot.py 의 /등록, /목록 이 안내하는 링크가 여기로 온다.
@@ -403,14 +371,21 @@ def callback():
 
 
 if __name__ == "__main__":
-    # 웹서버를 켜기 전에 ngrok 터널부터 연다.
-    # 이 한 줄로 config.py 의 고정 주소가 내 컴퓨터의 WEB_PORT 로 연결된다.
-    # authtoken_from_env=True 는 .env 의 NGROK_AUTHTOKEN 을 읽으라는 뜻이다
-    # (fetch.py 를 import 할 때 load_dotenv() 가 이미 불려서 값이 올라와 있다).
-    ngrok.forward(WEB_PORT, authtoken_from_env=True, domain=NGROK_DOMAIN)
-    print(f"공개 주소: {WEB_BASE_URL}  (팀원들도 이 주소로 들어온다)")
+    # debug=True 로 켜면 Flask 가 프로세스를 두 개 띄운다.
+    # 감시자(부모)가 파일이 바뀌는지 지켜보다가, 실제로 웹을 돌리는 일꾼(자식)을
+    # 껐다 새로 띄운다. 자식에게는 WERKZEUG_RUN_MAIN 이라는 표시가 붙어 있다.
+    #
+    # 터널은 감시자 쪽에서만 연다. 자식이 다시 떠도 터널은 그대로 살아 있어서,
+    # 같은 주소로 두 번 열려다 실패하는 일이 없다.
+    # 이렇게 해야 card.py 를 고쳤을 때 web.py 가 알아서 새 코드로 갈아탄다.
+    # (예전에는 자동 재시작을 꺼둬서, 카드 디자인을 고쳐도 옛날 그림이 계속 나왔다)
+    if os.environ.get("WERKZEUG_RUN_MAIN") is None:
+        # authtoken_from_env=True 는 .env 의 NGROK_AUTHTOKEN 을 읽으라는 뜻이다
+        # (fetch.py 를 import 할 때 load_dotenv() 가 이미 불려서 값이 올라와 있다).
+        #
+        # 돌려받은 값을 변수에 담아 둔다. 아무도 안 들고 있으면 파이썬이
+        # 필요 없는 값으로 보고 정리해 버려서 터널이 끊긴다.
+        listener = ngrok.forward(WEB_PORT, authtoken_from_env=True, domain=NGROK_DOMAIN)
+        print(f"공개 주소: {WEB_BASE_URL}  (팀원들도 이 주소로 들어온다)")
 
-    # use_reloader=False 가 없으면 Flask 가 프로세스를 두 개 띄운다.
-    # 그러면 같은 주소로 터널을 두 번 열려다 실패한다.
-    # 대신 코드를 고쳐도 자동으로 다시 뜨지 않으니 Ctrl+C 로 끄고 다시 켠다.
-    app.run(port=WEB_PORT, debug=True, use_reloader=False)
+    app.run(port=WEB_PORT, debug=True)

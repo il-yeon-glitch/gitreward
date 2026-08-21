@@ -12,23 +12,30 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 from config import (
-    STAT_NAMES,
+    GROWTH_STAT_NAMES,
     CARD_WIDTH, CARD_HEIGHT, CARD_PADDING,
     CARD_BG, CARD_TEXT, CARD_SUB, CARD_BAR_BG,
-    FONT_PATH, FONT_SIZE_NAME, FONT_SIZE_LEVEL, FONT_SIZE_STAT, FONT_SIZE_POSITION,
-    NAME_STROKE_WIDTH, POSITION_STROKE_WIDTH,
+    FONT_PATH, FONT_SIZE_NAME, FONT_SIZE_LEVEL, FONT_SIZE_STAT,
+    NAME_STROKE_WIDTH,
     AVATAR_SIZE, AVATAR_TOP, NAME_TOP, LEVEL_TOP,
-    STAT_TOP, STAT_ROW_HEIGHT, BAR_HEIGHT, BAR_MAX,
+    STAT_TOP, STAT_ROW_HEIGHT,
     CARD_DIR,
     GRADE_BG, GRADE_BG_BOTTOM, GRADE_ACCENT, GRADE_BORDER_WIDTH, GRADE_BORDER_RINGS,
     GRADE_BADGE_SIZE, GRADE_BADGE_MARGIN, GRADE_BADGE_FONT_SIZE,
     GRADE_BADGE_TEXT_COLOR, GRADE_BADGE_STROKE_WIDTH,
     STAT_TEXT_STROKE_COLOR, STAT_TEXT_STROKE_WIDTH, STAT_LABEL_COLOR,
-    BAR_OUTLINE_COLOR, BAR_OUTLINE_WIDTH,
-    POSITION_TOP,
 )
+import db
 from fetch import CACHE_DIR, load_cache, normalize_repo, cache_path, repo_from_cache_name
-from stats import calc_stats, calc_level, calc_grade, calc_position
+from stats import calc_stats, calc_level, calc_grade, calc_growth_stats
+
+
+# 카드에 그릴 능력치(HP/ATK/DEF)를 구한다.
+# 레벨은 GitHub 기록에서 오고, 배분 포인트는 DB 에서 온다. 둘을 합쳐야 나온다.
+# 이 계산을 bot.py / web.py 가 각자 하면 같은 식이 세 곳에 생긴다.
+def card_stats(person, level, repo):
+    points = db.get_points_by_login(person["login"], repo)
+    return calc_growth_stats(level, points)
 
 
 # 프로필 이미지를 받아 카드에 넣을 크기로 줄인다.
@@ -117,7 +124,6 @@ def draw_grade_badge(draw, grade):
 # bot.py 는 파일을 만들지 않고 메모리로 바로 보내야 해서 이 함수를 쓴다.
 def draw_card(person, stats, level):
     grade = calc_grade(level)
-    position = calc_position(stats)
     accent = GRADE_ACCENT[grade]
 
     card = draw_background(grade)
@@ -127,7 +133,6 @@ def draw_card(person, stats, level):
     font_name = ImageFont.truetype(FONT_PATH, FONT_SIZE_NAME)
     font_level = ImageFont.truetype(FONT_PATH, FONT_SIZE_LEVEL)
     font_stat = ImageFont.truetype(FONT_PATH, FONT_SIZE_STAT)
-    font_position = ImageFont.truetype(FONT_PATH, FONT_SIZE_POSITION)
 
     draw_border(draw, grade)
 
@@ -146,8 +151,6 @@ def draw_card(person, stats, level):
     # 그런 등급만 어두운 테두리를 덧그려서 구분되게 한다 (없는 등급은 0/None → 기존과 동일).
     stat_stroke_width = STAT_TEXT_STROKE_WIDTH.get(grade, 0)
     stat_stroke_color = STAT_TEXT_STROKE_COLOR.get(grade)
-    bar_outline_color = BAR_OUTLINE_COLOR.get(grade)
-    bar_outline_width = BAR_OUTLINE_WIDTH.get(grade, 0)
     stat_label_color = STAT_LABEL_COLOR.get(grade, CARD_SUB)
 
     # --- 이름과 레벨 ---
@@ -165,54 +168,21 @@ def draw_card(person, stats, level):
         stroke_width=stat_stroke_width, stroke_fill=stat_stroke_color,
     )
 
-    # --- 포지션 (제일 높은 능력치로 정한 이름) ---
-    draw.text(
-        (CARD_WIDTH // 2, POSITION_TOP), position,
-        font=font_position, fill=CARD_TEXT, anchor="mm",
-        stroke_width=POSITION_STROKE_WIDTH, stroke_fill=CARD_TEXT,
-    )
-
-    # --- 능력치 막대 ---
-    bar_width = CARD_WIDTH - CARD_PADDING * 2
+    # --- 능력치 (이름과 숫자만. 막대와 포지션은 없앴다) ---
     y = STAT_TOP
 
-    for key in STAT_NAMES:
-        value = stats[key]
-
+    for key in GROWTH_STAT_NAMES:
         # 능력치 이름은 왼쪽, 값은 오른쪽에 붙인다.
         draw.text(
-            (CARD_PADDING, y), STAT_NAMES[key],
+            (CARD_PADDING, y), GROWTH_STAT_NAMES[key],
             font=font_stat, fill=stat_label_color, anchor="lm",
             stroke_width=stat_stroke_width, stroke_fill=stat_stroke_color,
         )
         draw.text(
-            (CARD_WIDTH - CARD_PADDING, y), str(value),
+            (CARD_WIDTH - CARD_PADDING, y), str(stats[key]),
             font=font_stat, fill=CARD_TEXT, anchor="rm",
             stroke_width=stat_stroke_width, stroke_fill=stat_stroke_color,
         )
-
-        # 막대는 두 번 그린다. 빈 막대를 먼저 깔고, 그 위에 값만큼 덮는다.
-        bar_y = y + 25
-
-        if bar_outline_width > 0:
-            draw.rectangle(
-                [CARD_PADDING, bar_y, CARD_PADDING + bar_width, bar_y + BAR_HEIGHT],
-                fill=CARD_BAR_BG, outline=bar_outline_color, width=bar_outline_width,
-            )
-        else:
-            draw.rectangle(
-                [CARD_PADDING, bar_y, CARD_PADDING + bar_width, bar_y + BAR_HEIGHT],
-                fill=CARD_BAR_BG,
-            )
-
-        # BAR_MAX 를 넘으면 꽉 찬 막대로 자른다.
-        ratio = min(value / BAR_MAX, 1.0)
-        if ratio > 0:
-            fill_box = [CARD_PADDING, bar_y, CARD_PADDING + int(bar_width * ratio), bar_y + BAR_HEIGHT]
-            if bar_outline_width > 0:
-                draw.rectangle(fill_box, fill=accent, outline=bar_outline_color, width=bar_outline_width)
-            else:
-                draw.rectangle(fill_box, fill=accent)
 
         y += STAT_ROW_HEIGHT
 
@@ -247,6 +217,39 @@ def make_card(person, stats, level, repo):
     return path
 
 
+# 만들어 둔 카드를 지운다. login 을 주면 그 사람 것 한 장만, 안 주면 그 저장소 것 전부.
+#
+# make_card() 는 파일이 이미 있으면 다시 그리지 않는다(위 참고). 그래서 데이터가
+# 바뀌었을 때 -- /갱신 으로 기여 기록이 늘거나 /스텟분배 로 능력치가 바뀌었을 때 --
+# 여기서 먼저 지워 줘야 다음번에 새 그림이 나온다.
+#
+# 파일 이름 규칙은 make_card() 에만 있어야 한다. bot.py 가 이름을 직접 조립하면
+# 같은 규칙이 두 곳에 생겨서, 한쪽만 고치는 실수가 난다 (함정.md 2026-08-20).
+def remove_cards(repo, login=None):
+    if not os.path.exists(CARD_DIR):
+        return 0
+
+    # make_card() 가 만드는 이름과 같은 방식으로 앞부분을 만든다.
+    # GitHub 아이디에는 _ 가 못 들어가서 "owner_repo_" 로 저장소가 정확히 구분된다.
+    prefix = f"{repo.replace('/', '_')}_"
+
+    # 한 사람만 지울 때는 앞부분 비교가 아니라 이름 전체를 맞춰 본다.
+    # 앞부분만 보면 il-yeon 을 지우려다 il-yeon-glitch 까지 지운다.
+    target = f"{prefix}{login}.png" if login is not None else None
+
+    removed = 0
+    for name in os.listdir(CARD_DIR):
+        if not name.endswith(".png"):
+            continue
+
+        hit = (name == target) if target is not None else name.startswith(prefix)
+        if hit:
+            os.remove(os.path.join(CARD_DIR, name))
+            removed += 1
+
+    return removed
+
+
 # 아래는 터미널에서 직접 실행했을 때만 돈다.
 if __name__ == "__main__":
     if len(sys.argv) > 1:
@@ -279,8 +282,10 @@ if __name__ == "__main__":
 
         print(f"=== {name} ===")
         for person in load_cache(path):
-            stats = calc_stats(person)
-            level = calc_level(stats)
+            # 레벨은 옛날 4개 능력치의 합으로 낸다. 카드에 그리는 값은 그게 아니라
+            # card_stats() 가 내는 HP/ATK/DEF 다 (레벨 + 배분 포인트).
+            level = calc_level(calc_stats(person))
+            stats = card_stats(person, level, repo)
             out = make_card(person, stats, level, repo)
             print(f"  {out}  (Lv.{level}  {stats})")
             made += 1

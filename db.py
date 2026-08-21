@@ -33,6 +33,23 @@ def init_db():
         )
         """
     )
+    # 각 능력치에 "지금까지 쓴" 포인트만 담는다.
+    # 레벨·최종 능력치·남은 포인트는 저장하지 않는다. stats.py 가 그때그때 계산한다.
+    #
+    # discord_id 와 repo 를 묶어 열쇠로 쓴다. 같은 사람이 저장소마다
+    # 다른 캐릭터를 갖게 될 수 있어서다. 지금은 TEAM_REPO 하나만 쓴다.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stat_points (
+            discord_id TEXT NOT NULL,
+            repo       TEXT NOT NULL,
+            hp         INTEGER NOT NULL DEFAULT 0,
+            atk        INTEGER NOT NULL DEFAULT 0,
+            defense    INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (discord_id, repo)
+        )
+        """
+    )
     conn.commit()
     conn.close()
 
@@ -95,3 +112,60 @@ def get_linked_login(discord_id):
     conn.close()
 
     return row[0] if row else None
+
+
+# SQL 컬럼은 소문자(hp/atk/defense)인데 파이썬에서는 대문자로 다룬다.
+# stats.py 의 calc_growth_stats() 가 대문자 키를 받기 때문이다.
+# 이름을 바꾸는 자리를 이 함수 하나로 모아둔다.
+def _to_points(row):
+    # 아직 한 번도 배분하지 않은 사람은 행이 아예 없다. 0 세 개로 본다.
+    if row is None:
+        return {"HP": 0, "ATK": 0, "DEF": 0}
+
+    return {"HP": row[0], "ATK": row[1], "DEF": row[2]}
+
+
+# 이 디스코드 유저가 이 저장소에서 지금까지 쓴 포인트를 돌려준다.
+def get_points(discord_id, repo):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT hp, atk, defense FROM stat_points WHERE discord_id = ? AND repo = ?",
+        (discord_id, repo),
+    ).fetchone()
+    conn.close()
+
+    return _to_points(row)
+
+
+# 위 함수를 GitHub 아이디로 찾는 버전.
+# card.py / web.py 는 discord_id 를 모르고 login 만 안다. 그래서 두 표를 이어서 찾는다.
+# GitHub 아이디는 대소문자를 가리지 않으므로 양쪽 다 소문자로 맞춰 비교한다.
+def get_points_by_login(github_login, repo):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        """
+        SELECT p.hp, p.atk, p.defense
+        FROM stat_points p
+        JOIN linked_accounts a ON a.discord_id = p.discord_id
+        WHERE lower(a.github_login) = lower(?) AND p.repo = ?
+        """,
+        (github_login, repo),
+    ).fetchone()
+    conn.close()
+
+    return _to_points(row)
+
+
+# 이번에 나눠 준 만큼 기존 값에 더한다. 덮어쓰지 않는다.
+# 행이 없을 때와 있을 때를 따로 쓰지 않으려고 INSERT OR REPLACE 를 쓴다.
+def add_points(discord_id, repo, hp, atk, defense):
+    now = get_points(discord_id, repo)
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT OR REPLACE INTO stat_points (discord_id, repo, hp, atk, defense) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (discord_id, repo, now["HP"] + hp, now["ATK"] + atk, now["DEF"] + defense),
+    )
+    conn.commit()
+    conn.close()

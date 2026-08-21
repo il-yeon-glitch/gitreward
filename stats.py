@@ -5,13 +5,16 @@
 #   python stats.py octocat/Hello-World   # 한 저장소만
 
 import os
-import random
 import sys
 
 from config import (
-    STAT_WEIGHTS, LEVEL_DIVISOR, STAT_MAX,
-    GRADE_LEVEL_RANGES, POSITION_NAMES,
+    STAT_WEIGHTS, LEVEL_DIVISOR,
+    GRADE_LEVEL_RANGES,
+    STAT_BASE, POINTS_PER_LEVEL,
 )
+
+# 아직 한 번도 배분하지 않은 상태. db.py 가 없어도 계산해 볼 수 있게 여기 둔다.
+NO_POINTS = {"HP": 0, "ATK": 0, "DEF": 0}
 
 # fetch.py 의 것을 그대로 쓴다. 읽는 방법을 두 벌 만들면 한쪽만 고치는 실수가 난다.
 # load_cache 는 utf-8 을 지정해서 읽는다. 직접 open() 하면 한글 윈도우에서 깨진다.
@@ -31,8 +34,8 @@ def calc_stats(person):
     stats = {}
     for name in raw:
         # 1/50 을 곱하면 24.06 같은 소수가 나온다. int() 로 소수점을 버린다.
-        # 그리고 STAT_MAX 를 넘지 않게 자른다.
-        stats[name] = min(int(raw[name]), STAT_MAX)
+        # 예전에는 여기서 STAT_MAX(99)로 잘랐는데, 상한을 없애서 자르지 않는다.
+        stats[name] = int(raw[name])
 
     return stats
 
@@ -45,31 +48,52 @@ def calc_level(stats):
     return max(1, int(total / LEVEL_DIVISOR))
 
 
+# 레벨과 배분 포인트로 체력·공격력·방어력을 낸다 (기획서 6-2).
+#
+# points 는 "지금까지 각 능력치에 쓴 포인트" 다. {"HP": 4, "ATK": 5, "DEF": 3} 형태로,
+# 2단계에서 db.py 가 이 모양으로 돌려줄 것이다. 아직 한 번도 안 쓴 사람은 0 세 개다.
+#
+# 이 함수를 bot.py / card.py / web.py 가 모두 갖다 쓴다.
+# 같은 식을 여러 파일에 적으면 한쪽만 고치는 실수가 난다 (함정.md 2026-08-20).
+def calc_growth_stats(level, points):
+    # 레벨이 1 오르면 셋 다 +1 이니, 레벨을 그대로 더하면 된다.
+    return {
+        "HP": STAT_BASE + level + points["HP"],
+        "ATK": STAT_BASE + level + points["ATK"],
+        "DEF": STAT_BASE + level + points["DEF"],
+    }
+
+
+# 아직 안 쓴 포인트가 몇 개인지 낸다.
+# 받은 포인트를 따로 저장하지 않는다. 레벨에서 쓴 만큼 빼면 언제 계산해도 답이 같다.
+def calc_left_points(level, points):
+    spent = points["HP"] + points["ATK"] + points["DEF"]
+
+    # 커밋 기록이 줄어(force push 등) 레벨이 내려가면 음수가 될 수 있다.
+    # 이미 올린 능력치를 뺏지는 않고, 레벨이 다시 오를 때까지 새 포인트만 안 준다.
+    return max(0, level * POINTS_PER_LEVEL - spent)
+
+
 # 레벨로 등급을 낸다. 범위는 config.py 의 GRADE_LEVEL_RANGES 에 있다.
 def calc_grade(level):
     for low, high, grade in GRADE_LEVEL_RANGES:
         if low <= level <= high:
             return grade
 
-    # 이론상 레벨은 1~49 를 못 벗어난다(능력치 4개 다 99 여도 396÷8=49).
-    # 그래도 범위를 벗어나면 가장 가까운 쪽 등급으로 맞춘다.
+    # 능력치 상한을 없애서 레벨이 위로 열려 있다. 표의 마지막 칸(S: 46~49)을
+    # 넘는 레벨은 전부 S 로 본다. 아래로 벗어나면 가장 낮은 등급이다.
     return GRADE_LEVEL_RANGES[0][2] if level < GRADE_LEVEL_RANGES[0][0] else GRADE_LEVEL_RANGES[-1][2]
 
 
-# 가장 높은 능력치로 포지션을 정한다. 여러 능력치가 똑같이 1등이면 랜덤으로 고른다.
-def calc_position(stats):
-    best = max(stats.values())
-    candidates = [key for key, value in stats.items() if value == best]
-    key = random.choice(candidates)
-    return POSITION_NAMES[key]
+# 포지션(공격형 등)을 내던 calc_position() 은 2026-08-21 기획 결정으로 없앴다.
 
 
 # 한 저장소의 사람들을 표로 찍는다. 계수를 눈으로 보고 조정하려고 만든 것이다.
 # 왼쪽은 GitHub 에서 받은 원래 기록, 오른쪽은 환산한 능력치다. 같이 봐야 계수가 보인다.
 def print_table(title, people):
     print(f"=== {title}  ({len(people)}명) ===")
-    print("login                 커밋     추가     삭제   주 |  ATK  DEF  AGI  STA |  합계   Lv  등급  포지션")
-    print("-" * 96)
+    print("login                 커밋     추가     삭제   주 |  ATK  DEF  AGI  STA |  합계   Lv  등급")
+    print("-" * 90)
 
     rows = []
     for p in people:
@@ -85,10 +109,6 @@ def print_table(title, people):
         total = sum(stats.values())
         levels.append(level)
         grade = calc_grade(level)
-        position = calc_position(stats)
-
-        # 능력치가 STAT_MAX 에서 잘렸으면 표시한다. 계수가 너무 큰지 보는 단서다.
-        mark = "  <- 상한에 걸림" if max(stats.values()) >= STAT_MAX else ""
 
         print(
             f"{p['login']:<20}"
@@ -102,9 +122,7 @@ def print_table(title, people):
             f"{stats['STA']:>5} |"
             f"{total:>6}"
             f"{level:>5}"
-            f"   {grade:<4}"
-            f"{position:<6}"
-            f"{mark}"
+            f"   {grade}"
         )
 
     return levels
