@@ -16,7 +16,7 @@ from config import (
     WEB_BASE_URL, GITHUB_OAUTH_AUTHORIZE_URL, GITHUB_OAUTH_TOKEN_URL, GITHUB_API_USER_URL,
 )
 from fetch import CACHE_DIR, load_cache, repo_from_cache_name
-from stats import calc_stats, calc_level
+from stats import calc_stats, calc_level, calc_grade
 from card import make_card
 
 # Flask 는 static/ 폴더를 자동으로 웹에 열어준다.
@@ -71,6 +71,7 @@ def load_people(only_repo=None):
                 "login": person["login"],
                 "repo": repo,
                 "level": level,
+                "grade": calc_grade(level),
                 "stats": stats,
                 "file": os.path.basename(path),
                 # 브라우저는 한 번 받은 이미지를 주소가 같으면 다시 받지 않는다.
@@ -151,6 +152,27 @@ PAGE = """
   .name { margin-top: 10px; font-size: 16px; }
   .meta { color: {{ sub }}; font-size: 12px; margin-top: 2px; }
   .empty { color: {{ sub }}; }
+
+  /* S 등급 카드에만 붙는 반짝이는 효과. 마우스를 올리면 카드가 기울고 빛이 지나간다.
+     디스코드로 보내는 PNG 는 정적 이미지라 이 효과를 못 넣는다 — 웹 페이지 전용이다. */
+  .holo-container { position: relative; transition: transform 0.1s; }
+  .holo-overlay {
+    position: absolute;
+    inset: 12px 12px auto 12px;
+    border-radius: 8px;
+    aspect-ratio: 2 / 3;
+    background: linear-gradient(105deg,
+      transparent 40%,
+      rgba(255, 219, 112, 0.8) 45%,
+      rgba(132, 50, 255, 0.6) 50%,
+      transparent 54%);
+    background-size: 150% 150%;
+    background-position: 100%;
+    filter: brightness(1.1) opacity(0);
+    mix-blend-mode: color-dodge;
+    transition: filter 0.1s, background-position 0.1s;
+    pointer-events: none;
+  }
 </style>
 </head>
 <body>
@@ -184,7 +206,8 @@ PAGE = """
 
     <div class="grid">
       {% for p in people %}
-        <div class="item">
+        <div class="item{% if p.grade == 'S' %} holo-container{% endif %}">
+          {% if p.grade == 'S' %}<div class="holo-overlay"></div>{% endif %}
           <img src="{{ url_for('static', filename=p.file, v=p.v) }}" alt="{{ p.login }}">
           <div class="name">{{ p.login }} &middot; Lv.{{ p.level }}</div>
           <div class="meta">{{ p.repo }}</div>
@@ -192,6 +215,35 @@ PAGE = """
       {% endfor %}
     </div>
   {% endif %}
+
+  <script>
+    // S 등급 카드(.holo-container)에만 붙는다. 마우스 위치에 따라 카드를
+    // 살짝 기울이고, 대각선 빛 띠(.holo-overlay)를 그 위로 지나가게 한다.
+    document.querySelectorAll('.holo-container').forEach(function (container) {
+      var overlay = container.querySelector('.holo-overlay')
+
+      container.addEventListener('mousemove', function (e) {
+        var rect = container.getBoundingClientRect()
+        // 카드 크기가 화면마다 다르니, 픽셀이 아니라 0~1 비율로 계산해야
+        // 큰 카드에서도 작은 카드와 똑같은 기울기가 나온다.
+        var px = (e.clientX - rect.left) / rect.width
+        var py = (e.clientY - rect.top) / rect.height
+
+        var rotateY = (0.5 - px) * 40
+        var rotateX = (py - 0.5) * 40
+
+        overlay.style.backgroundPosition = ((px + py) * 50) + '%'
+        overlay.style.filter = 'brightness(1.2) opacity(' + px.toFixed(2) + ')'
+        container.style.transform =
+          'perspective(800px) rotateX(' + rotateX.toFixed(1) + 'deg) rotateY(' + rotateY.toFixed(1) + 'deg)'
+      })
+
+      container.addEventListener('mouseout', function () {
+        overlay.style.filter = 'brightness(1.1) opacity(0)'
+        container.style.transform = 'perspective(800px) rotateX(0deg) rotateY(0deg)'
+      })
+    })
+  </script>
 </body>
 </html>
 """
