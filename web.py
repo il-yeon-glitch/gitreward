@@ -14,7 +14,7 @@ from flask import Flask, render_template_string, url_for, request, redirect
 import db
 from config import (
     CARD_BG, CARD_ACCENT, CARD_TEXT, CARD_SUB, CARD_BAR_BG,
-    WEB_BASE_URL, NGROK_DOMAIN, WEB_PORT,
+    WEB_BASE_URL, NGROK_DOMAIN, WEB_PORT, GAME_BASE_URL,
     GITHUB_OAUTH_AUTHORIZE_URL, GITHUB_OAUTH_TOKEN_URL, GITHUB_API_USER_URL,
 )
 from fetch import CACHE_DIR, load_cache, repo_from_cache_name
@@ -150,7 +150,9 @@ PAGE = """
     grid-template-columns: {{ columns }};
   }
 
-  .item { background: {{ barbg }}; border-radius: 12px; padding: 12px; }
+  /* 카드를 <a> 로 감싸서 클릭하면 /game/<login> 으로 가게 한다.
+     <a> 는 기본이 inline 이라 block 을 안 주면 div 로 있을 때와 레이아웃이 달라진다. */
+  .item { display: block; background: {{ barbg }}; border-radius: 12px; padding: 12px; }
   .item img { width: 100%; display: block; border-radius: 8px; }
   .name { margin-top: 10px; font-size: 16px; }
   .meta { color: {{ sub }}; font-size: 12px; margin-top: 2px; }
@@ -209,12 +211,12 @@ PAGE = """
 
     <div class="grid">
       {% for p in people %}
-        <div class="item{% if p.grade in ['S', 'A'] %} holo-container{% endif %}">
+        <a class="item{% if p.grade in ['S', 'A'] %} holo-container{% endif %}" href="/game/{{ p.login }}">
           {% if p.grade in ['S', 'A'] %}<div class="holo-overlay"></div>{% endif %}
           <img src="{{ url_for('static', filename=p.file, v=p.v) }}" alt="{{ p.login }}">
           <div class="name">{{ p.login }} &middot; Lv.{{ p.level }}</div>
           <div class="meta">{{ p.repo }}</div>
-        </div>
+        </a>
       {% endfor %}
     </div>
   {% endif %}
@@ -247,6 +249,73 @@ PAGE = """
       })
     })
   </script>
+</body>
+</html>
+"""
+
+
+# 카드를 클릭했을 때 오는 비번 입력 화면. PAGE 와 따로 둔 건 nav/grid 가 필요 없는
+# 훨씬 단순한 화면이라서다.
+GAME_GATE_PAGE = """
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ login }} 인증</title>
+<style>
+  body {
+    background: {{ bg }};
+    color: {{ text }};
+    font-family: "Malgun Gothic", sans-serif;
+    margin: 0;
+    padding: 32px;
+  }
+  .hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 70vh;
+  }
+  .sub { color: {{ sub }}; font-size: 14px; margin-bottom: 20px; }
+  input {
+    background: {{ barbg }};
+    color: {{ text }};
+    border: none;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    width: 240px;
+  }
+  button {
+    background: {{ accent }};
+    color: {{ bg }};
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    margin-left: 8px;
+    cursor: pointer;
+  }
+  .error { color: #e06060; margin-top: 12px; }
+</style>
+</head>
+<body>
+  <div class="hero">
+    <h1>{{ login }}</h1>
+    <div class="sub">이 카드로 게임에 들어가려면, 디스코드 `/비밀번호확인` 으로 받은 비번을 입력한다</div>
+
+    <form method="post">
+      <input type="password" name="password" placeholder="비번" autofocus>
+      <button type="submit">입장</button>
+    </form>
+
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+  </div>
 </body>
 </html>
 """
@@ -310,6 +379,29 @@ def project(owner, repo):
         people=people,
         columns="repeat(auto-fill, minmax(260px, 1fr))",
         message=message,
+        **COLORS,
+    )
+
+
+# 카드를 클릭했을 때 오는 자리. 비번을 맞혀야 게임으로 넘어간다.
+# 비번은 discord_id 에 묶여 있는데 여기서는 github_login 만 아니까,
+# db.verify_password_by_login() 으로 login -> discord_id 를 되짚어 비번을 확인한다.
+@app.route("/game/<login>", methods=["GET", "POST"])
+def game_gate(login):
+    error = None
+
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if db.verify_password_by_login(login, password):
+            if not GAME_BASE_URL:
+                return "게임 주소가 아직 안 정해졌다. config.py 의 GAME_BASE_URL 을 확인한다.", 500
+            return redirect(f"{GAME_BASE_URL}?{urlencode({'login': login})}")
+        error = "비번이 틀렸다. 디스코드에서 `/비밀번호확인` 으로 다시 확인한다."
+
+    return render_template_string(
+        GAME_GATE_PAGE,
+        login=login,
+        error=error,
         **COLORS,
     )
 

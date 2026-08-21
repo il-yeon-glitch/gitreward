@@ -235,6 +235,83 @@ async def link_command(interaction):
     )
 
 
+# 웹에서 카드를 클릭했을 때 "나 맞다"를 증명하는 데 쓰는 비번을 보여준다.
+# /연결 의 state 와 달리 시간제한 없이 몇 번이든 다시 확인할 수 있다.
+@tree.command(name="비밀번호확인", description="웹에서 카드를 클릭할 때 쓰는 비번을 보여준다", guild=GUILD)
+async def check_password_command(interaction):
+    # 비번이 채널에 공개로 남으면 남이 가져다 쓸 수 있다. 나에게만 보이게 보낸다.
+    await interaction.response.defer(ephemeral=True)
+
+    discord_id = str(interaction.user.id)
+    login = db.get_linked_login(discord_id)
+    if login is None:
+        await interaction.followup.send("먼저 `/연결` 로 GitHub 계정을 연결한다.", ephemeral=True)
+        return
+
+    password = db.get_password(discord_id)
+    if password is None:
+        await interaction.followup.send(
+            "아직 비번을 만든 적이 없다. `/비밀번호발급` 으로 먼저 만든다.", ephemeral=True
+        )
+        return
+
+    await interaction.followup.send(
+        f"네 비번: `{password}`\n웹에서 카드를 클릭했을 때 이 값을 입력한다.", ephemeral=True
+    )
+
+
+# "재발급하시겠습니까?" 예/아니요 버튼. 이미 비번이 있는데 /비밀번호발급 을 다시 눌렀을 때만 뜬다.
+# 눌러야 실제로 db.set_password() 가 불린다 — 버튼을 안 누르면 기존 비번은 그대로 산다.
+class ReissuePasswordConfirm(discord.ui.View):
+    def __init__(self, discord_id):
+        super().__init__(timeout=60)
+        self.discord_id = discord_id
+
+    @discord.ui.button(label="예", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction, button):
+        password = secrets.token_urlsafe(16)
+        db.set_password(self.discord_id, password)
+        await interaction.response.edit_message(
+            content=f"새 비번: `{password}`\n예전 비번은 이제 안 먹힌다. 잘 복사해 둔다.",
+            view=None,
+        )
+
+    @discord.ui.button(label="아니요", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction, button):
+        await interaction.response.edit_message(
+            content="재발급을 취소했다. 기존 비번을 그대로 쓴다.", view=None
+        )
+
+
+# 비번을 새로 만든다. 예전 비번을 잊었거나, 남에게 보여준 것 같아 불안할 때 쓴다.
+# 이미 비번이 있으면 실수로 덮어쓰지 않도록 먼저 예/아니요로 확인한다.
+@tree.command(name="비밀번호발급", description="웹 인증용 비번을 새로 만든다 (예전 비번은 못 쓰게 된다)", guild=GUILD)
+async def reissue_password_command(interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    discord_id = str(interaction.user.id)
+    login = db.get_linked_login(discord_id)
+    if login is None:
+        await interaction.followup.send("먼저 `/연결` 로 GitHub 계정을 연결한다.", ephemeral=True)
+        return
+
+    if db.get_password(discord_id) is not None:
+        await interaction.followup.send(
+            "이미 비번이 있다. 재발급하면 예전 비번은 바로 못 쓰게 된다. 재발급하시겠습니까?",
+            view=ReissuePasswordConfirm(discord_id),
+            ephemeral=True,
+        )
+        return
+
+    # /연결 의 state 토큰을 만들 때와 같은 방식이다. 복사해서 붙여넣는 용도라 이대로 충분하다.
+    password = secrets.token_urlsafe(16)
+    db.set_password(discord_id, password)
+
+    await interaction.followup.send(
+        f"새 비번: `{password}`\n웹에서 카드를 클릭했을 때 이 값을 입력한다.", ephemeral=True
+    )
+
+
 # /능력치 와 /스텟분배 가 똑같이 하는 준비 작업이다. 두 곳에 적지 않으려고 함수로 뺐다.
 # 성공하면 (사람, 레벨, 쓴포인트, None) 을, 실패하면 (None, None, None, 안내문) 을 돌려준다.
 def load_my_card(discord_id, repo):

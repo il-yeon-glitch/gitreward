@@ -24,6 +24,14 @@ def init_db():
         )
         """
     )
+
+    # password 는 나중에(비번확인/비번재발급 기능과 함께) 추가된 컬럼이라,
+    # 이미 만들어져 있던 DB 파일에는 없을 수 있다. ALTER TABLE ADD COLUMN 은
+    # 컬럼이 이미 있으면 에러가 나서, 먼저 있는지 확인하고 없을 때만 추가한다.
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(linked_accounts)")]
+    if "password" not in columns:
+        conn.execute("ALTER TABLE linked_accounts ADD COLUMN password TEXT")
+
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS pending_links (
@@ -112,6 +120,45 @@ def get_linked_login(discord_id):
     conn.close()
 
     return row[0] if row else None
+
+
+# /비번재발급 이 새 비번을 저장할 때 쓴다. 이미 있으면 덮어쓴다(이전 비번은 그 즉시 못 쓴다).
+def set_password(discord_id, password):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "UPDATE linked_accounts SET password = ? WHERE discord_id = ?",
+        (password, discord_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+# /비번확인 이 지금 비번을 보여줄 때 쓴다. 연결 안 됐거나 아직 발급한 적 없으면 None.
+def get_password(discord_id):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT password FROM linked_accounts WHERE discord_id = ?", (discord_id,)
+    ).fetchone()
+    conn.close()
+
+    return row[0] if row else None
+
+
+# 웹에서 카드를 클릭했을 때 "이 사람이 이 카드 주인이 맞는지" 확인하는 데 쓴다.
+# GitHub 아이디는 대소문자를 가리지 않으므로 get_points_by_login() 과 같은 방식으로
+# 양쪽 다 소문자로 맞춰 비교한다. 비번을 아직 안 만들었으면(None) 무조건 틀린 것으로 본다.
+def verify_password_by_login(github_login, password):
+    if not password:
+        return False
+
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT password FROM linked_accounts WHERE lower(github_login) = lower(?)",
+        (github_login,),
+    ).fetchone()
+    conn.close()
+
+    return row is not None and row[0] is not None and row[0] == password
 
 
 # SQL 컬럼은 소문자(hp/atk/defense)인데 파이썬에서는 대문자로 다룬다.
