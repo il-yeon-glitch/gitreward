@@ -15,6 +15,7 @@ itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.3
 multidict==6.7.1
+ngrok==1.7.0
 pillow==12.3.0
 propcache==0.5.2
 python-dotenv==1.2.3

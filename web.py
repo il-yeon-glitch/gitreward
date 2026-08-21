@@ -7,13 +7,15 @@
 import os
 from urllib.parse import urlencode
 
+import ngrok
 import requests
 from flask import Flask, render_template_string, url_for, request, redirect
 
 import db
 from config import (
     CARD_BG, CARD_ACCENT, CARD_TEXT, CARD_SUB, CARD_BAR_BG,
-    WEB_BASE_URL, GITHUB_OAUTH_AUTHORIZE_URL, GITHUB_OAUTH_TOKEN_URL, GITHUB_API_USER_URL,
+    WEB_BASE_URL, NGROK_DOMAIN, WEB_PORT,
+    GITHUB_OAUTH_AUTHORIZE_URL, GITHUB_OAUTH_TOKEN_URL, GITHUB_API_USER_URL,
 )
 from fetch import CACHE_DIR, load_cache, repo_from_cache_name
 from stats import calc_stats, calc_level, calc_grade
@@ -401,5 +403,14 @@ def callback():
 
 
 if __name__ == "__main__":
-    # debug=True 로 켜면 코드를 고칠 때마다 서버가 알아서 다시 뜬다.
-    app.run(debug=True)
+    # 웹서버를 켜기 전에 ngrok 터널부터 연다.
+    # 이 한 줄로 config.py 의 고정 주소가 내 컴퓨터의 WEB_PORT 로 연결된다.
+    # authtoken_from_env=True 는 .env 의 NGROK_AUTHTOKEN 을 읽으라는 뜻이다
+    # (fetch.py 를 import 할 때 load_dotenv() 가 이미 불려서 값이 올라와 있다).
+    ngrok.forward(WEB_PORT, authtoken_from_env=True, domain=NGROK_DOMAIN)
+    print(f"공개 주소: {WEB_BASE_URL}  (팀원들도 이 주소로 들어온다)")
+
+    # use_reloader=False 가 없으면 Flask 가 프로세스를 두 개 띄운다.
+    # 그러면 같은 주소로 터널을 두 번 열려다 실패한다.
+    # 대신 코드를 고쳐도 자동으로 다시 뜨지 않으니 Ctrl+C 로 끄고 다시 켠다.
+    app.run(port=WEB_PORT, debug=True, use_reloader=False)

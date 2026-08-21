@@ -15,7 +15,7 @@
   `{"login": str, "avatar": str, "commits": int, "additions": int, "deletions": int, "active_weeks": int}`
 - **파일 구조 변경 금지.** `config.py` / `fetch.py` / `stats.py` / `card.py` / `bot.py` / `web.py`
   파일을 쪼개거나 합치거나 새로 만들지 않는다. 필요하면 먼저 물어본다.
-- **새 라이브러리 설치 금지.** 사용 중: `requests`, `Pillow`, `python-dotenv`, `discord.py`, `Flask`
+- **새 라이브러리 설치 금지.** 사용 중: `requests`, `Pillow`, `python-dotenv`, `discord.py`, `Flask`, `ngrok`
   다른 것이 필요하면 먼저 물어본다. 정말 필요하면 이 목록과 `requirements.txt`를 함께 수정하도록 제안한다.
   **설치(`pip install`)는 직접 실행하지 않고 사용자에게 맡긴다. <설치 가이드는 제시를 해준다.>**
 - **`.env` 파일을 읽거나 출력하지 않는다.** 값은 `os.getenv()`로만 접근한다.
