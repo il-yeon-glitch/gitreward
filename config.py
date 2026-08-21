@@ -182,3 +182,22 @@ POSITION_NAMES = {"ATK": "공격형", "DEF": "수비형", "AGI": "민첩형", "S
 
 # 포지션 글자의 세로 위치. 레벨(LEVEL_TOP=370)과 능력치(STAT_TOP=470) 사이에 놓는다.
 POSITION_TOP = 415
+
+
+# ------------------------------------------------------------------
+# 로그인(계정 연결) — db.py / web.py / bot.py 가 쓴다
+# 디스코드 계정과 GitHub 계정을 연결해서, 카드 주인만 자기 카드를 다룰 수 있게 한다.
+# 자세한 내용은 기획서 8번 참고 (2026-08-21 범위 추가).
+# ------------------------------------------------------------------
+
+# SQLite 파일 경로. cache/ 처럼 프로젝트 폴더 기준 상대 경로다.
+DB_PATH = "gitreward.db"
+
+# /연결 명령으로 받은 링크(state)가 살아 있는 시간(초).
+# 이 시간 안에 GitHub 로그인을 마치지 않으면 다시 /연결 부터 해야 한다.
+OAUTH_STATE_EXPIRE_SECONDS = 300
+
+# GitHub OAuth 앱 관련 고정 주소. Client ID·Secret 은 비밀이라 .env 에 둔다.
+GITHUB_OAUTH_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
+GITHUB_OAUTH_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_API_USER_URL = "https://api.github.com/user"

@@ -7,6 +7,7 @@
 # 응답이 두 번 오거나 한쪽이 조용히 끊긴다. 봇이 이상하면 팀에 먼저 물어본다.
 
 import os
+import secrets
 import sys
 from io import BytesIO
 
@@ -14,10 +15,11 @@ import discord
 from discord import app_commands
 from dotenv import load_dotenv
 
+import db
 import fetch
 from stats import calc_stats, calc_level
 from card import draw_card
-from config import WEB_BASE_URL
+from config import WEB_BASE_URL, OAUTH_STATE_EXPIRE_SECONDS
 
 load_dotenv()
 
@@ -141,6 +143,23 @@ async def list_command(interaction):
     await interaction.followup.send("등록된 저장소:\n" + "\n".join(lines))
 
 
+@tree.command(name="연결", description="디스코드 계정과 GitHub 계정을 연결한다", guild=GUILD)
+async def link_command(interaction):
+    # 링크에 1회용 토큰(state)이 들어가는데, 채널에 공개로 남으면 남이 가로챌 수 있다.
+    # ephemeral=True 로 나에게만 보이게 보낸다.
+    await interaction.response.defer(ephemeral=True)
+
+    state = secrets.token_urlsafe(16)
+    db.create_pending_link(state, str(interaction.user.id))
+
+    url = f"{WEB_BASE_URL}/login?state={state}"
+    minutes = OAUTH_STATE_EXPIRE_SECONDS // 60
+    await interaction.followup.send(
+        f"아래 링크에서 GitHub 로그인을 하면 계정이 연결돼. {minutes}분 안에 눌러야 해.\n{url}",
+        ephemeral=True,
+    )
+
+
 @tree.command(name="help", description="사용할 수 있는 명령어 목록을 보여준다", guild=GUILD)
 async def help_command(interaction):
     await interaction.response.defer()
@@ -186,6 +205,9 @@ async def on_ready():
     print("  예) /card  repo: octocat/Hello-World  login: Spaceghost")
     print("명령이 목록에 안 보이면 Ctrl+R 로 앱을 새로고침한다. 끄려면 Ctrl+C.")
 
+
+# 로그인(계정 연결) 테이블이 없으면 여기서 만든다. web.py 도 시작할 때 따로 부른다.
+db.init_db()
 
 # 봇을 켠다. 이 줄에서 멈춘 채로 계속 돈다.
 # 끌 때 RuntimeError: Event loop is closed 가 뜨는 건 윈도우에서 나오는 무해한 메시지다.
