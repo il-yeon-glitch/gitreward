@@ -5,10 +5,16 @@
 # HTML 은 이 파일 안에 문자열로 둔다. templates/ 폴더를 따로 만들지 않는다.
 
 import os
+from urllib.parse import urlencode
 
-from flask import Flask, render_template_string, url_for
+import requests
+from flask import Flask, render_template_string, url_for, request, redirect
 
-from config import CARD_BG, CARD_ACCENT, CARD_TEXT, CARD_SUB, CARD_BAR_BG
+import db
+from config import (
+    CARD_BG, CARD_ACCENT, CARD_TEXT, CARD_SUB, CARD_BAR_BG,
+    WEB_BASE_URL, GITHUB_OAUTH_AUTHORIZE_URL, GITHUB_OAUTH_TOKEN_URL, GITHUB_API_USER_URL,
+)
 from fetch import CACHE_DIR, load_cache, repo_from_cache_name
 from stats import calc_stats, calc_level
 from card import make_card
@@ -16,6 +22,9 @@ from card import make_card
 # Flask 는 static/ 폴더를 자동으로 웹에 열어준다.
 # config.py 의 CARD_DIR 이 "static" 이라, 만든 카드가 그대로 주소를 갖게 된다.
 app = Flask(__name__)
+
+# 로그인(계정 연결) 테이블이 없으면 여기서 만든다. bot.py 도 시작할 때 따로 부른다.
+db.init_db()
 
 
 # config.py 의 색(숫자 3개)을 CSS 가 알아듣는 형태로 바꾼다.
@@ -281,6 +290,62 @@ def project(owner, repo):
         message=message,
         **COLORS,
     )
+
+
+# 디스코드 /연결 명령이 보내준 링크가 오는 자리. state 만 들고 GitHub 로그인 화면으로 보낸다.
+@app.route("/login")
+def login():
+    state = request.args.get("state")
+    if not state:
+        return "잘못된 링크야. 디스코드에서 /연결 명령으로 다시 받아줘.", 400
+
+    params = urlencode({
+        "client_id": os.getenv("GITHUB_OAUTH_CLIENT_ID"),
+        "scope": "read:user",
+        "state": state,
+        "redirect_uri": f"{WEB_BASE_URL}/callback",
+    })
+    return redirect(f"{GITHUB_OAUTH_AUTHORIZE_URL}?{params}")
+
+
+# GitHub 이 로그인을 마치고 돌려보내는 자리.
+# code 를 진짜 로그인 정보로 바꾸고, state 로 어느 디스코드 유저였는지 되찾는다.
+@app.route("/callback")
+def callback():
+    code = request.args.get("code")
+    state = request.args.get("state")
+
+    # state 는 /연결 이 만들어 db 에 넣어둔 값이다. 한 번 쓰면 db.py 가 바로 지운다.
+    # 없거나(이미 썼거나) 5분(OAUTH_STATE_EXPIRE_SECONDS)을 넘겼으면 None 이 온다.
+    discord_id = db.pop_pending_link(state) if state else None
+    if not code or discord_id is None:
+        return "연결이 만료됐거나 잘못됐어. 디스코드에서 /연결 명령을 다시 실행해줘.", 400
+
+    token_res = requests.post(
+        GITHUB_OAUTH_TOKEN_URL,
+        data={
+            "client_id": os.getenv("GITHUB_OAUTH_CLIENT_ID"),
+            "client_secret": os.getenv("GITHUB_OAUTH_CLIENT_SECRET"),
+            "code": code,
+            "redirect_uri": f"{WEB_BASE_URL}/callback",
+        },
+        headers={"Accept": "application/json"},
+    )
+    access_token = token_res.json().get("access_token")
+    if not access_token:
+        return "GitHub 인증에 실패했어. 디스코드에서 /연결 명령을 다시 실행해줘.", 400
+
+    # 로그인 이름만 확인하면 되니, access_token 은 여기서만 쓰고 저장하지 않는다.
+    user_res = requests.get(
+        GITHUB_API_USER_URL,
+        headers={"Authorization": f"token {access_token}"},
+    )
+    github_login = user_res.json().get("login")
+    if not github_login:
+        return "GitHub 계정 정보를 가져오지 못했어.", 400
+
+    db.link_account(discord_id, github_login)
+    return f"✅ GitHub 계정 `{github_login}` 이 연결됐어! 디스코드로 돌아가도 돼."
 
 
 if __name__ == "__main__":
