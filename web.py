@@ -208,8 +208,8 @@ PAGE = """
 
     <div class="grid">
       {% for p in people %}
-        <div class="item{% if p.grade == 'S' %} holo-container{% endif %}">
-          {% if p.grade == 'S' %}<div class="holo-overlay"></div>{% endif %}
+        <div class="item{% if p.grade in ['S', 'A'] %} holo-container{% endif %}">
+          {% if p.grade in ['S', 'A'] %}<div class="holo-overlay"></div>{% endif %}
           <img src="{{ url_for('static', filename=p.file, v=p.v) }}" alt="{{ p.login }}">
           <div class="name">{{ p.login }} &middot; Lv.{{ p.level }}</div>
           <div class="meta">{{ p.repo }}</div>
