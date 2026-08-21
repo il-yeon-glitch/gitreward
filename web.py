@@ -18,7 +18,7 @@ from config import (
     GITHUB_OAUTH_AUTHORIZE_URL, GITHUB_OAUTH_TOKEN_URL, GITHUB_API_USER_URL,
 )
 from fetch import CACHE_DIR, load_cache, repo_from_cache_name
-from stats import calc_stats, calc_level, calc_grade
+from stats import calc_legacy_stats, calc_level, calc_grade
 from card import make_card, card_stats
 
 # Flask 는 static/ 폴더를 자동으로 웹에 열어준다.
@@ -66,7 +66,7 @@ def load_people(only_repo=None):
 
         for person in load_cache(os.path.join(CACHE_DIR, name)):
             # 레벨은 기여 기록에서, 카드에 그릴 HP/ATK/DEF 는 레벨 + 배분 포인트에서 나온다.
-            level = calc_level(calc_stats(person))
+            level = calc_level(calc_legacy_stats(person))
             stats = card_stats(person, level, repo)
             path = make_card(person, stats, level, repo)
 

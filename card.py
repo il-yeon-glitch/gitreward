@@ -27,7 +27,7 @@ from config import (
 )
 import db
 from fetch import CACHE_DIR, load_cache, normalize_repo, cache_path, repo_from_cache_name
-from stats import calc_stats, calc_level, calc_grade, calc_growth_stats
+from stats import calc_legacy_stats, calc_level, calc_grade, calc_growth_stats
 
 
 # 카드에 그릴 능력치(HP/ATK/DEF)를 구한다.
@@ -284,7 +284,7 @@ if __name__ == "__main__":
         for person in load_cache(path):
             # 레벨은 옛날 4개 능력치의 합으로 낸다. 카드에 그리는 값은 그게 아니라
             # card_stats() 가 내는 HP/ATK/DEF 다 (레벨 + 배분 포인트).
-            level = calc_level(calc_stats(person))
+            level = calc_level(calc_legacy_stats(person))
             stats = card_stats(person, level, repo)
             out = make_card(person, stats, level, repo)
             print(f"  {out}  (Lv.{level}  {stats})")

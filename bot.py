@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 
 import db
 import fetch
-from stats import calc_stats, calc_level, calc_growth_stats, calc_left_points
+from stats import calc_legacy_stats, calc_level, calc_growth_stats, calc_left_points
 from card import draw_card, card_stats, remove_cards
 from config import WEB_BASE_URL, OAUTH_STATE_EXPIRE_SECONDS, TEAM_REPO
 
@@ -81,7 +81,7 @@ async def card_command(interaction, repo: str, login: str):
         return
 
     # 레벨은 기여 기록에서, 카드에 그릴 HP/ATK/DEF 는 레벨 + 배분 포인트에서 나온다.
-    level = calc_level(calc_stats(person))
+    level = calc_level(calc_legacy_stats(person))
     stats = card_stats(person, level, fetch.normalize_repo(repo))
     image = draw_card(person, stats, level)
 
@@ -251,7 +251,7 @@ def load_my_card(discord_id, repo):
 
     for p in people:
         if p["login"].lower() == login.lower():
-            level = calc_level(calc_stats(p))
+            level = calc_level(calc_legacy_stats(p))
             return p, level, db.get_points(discord_id, repo), None
 
     return None, None, None, f"`{repo}` 에 `{login}` 의 기여 기록이 없다."

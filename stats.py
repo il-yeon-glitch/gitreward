@@ -8,7 +8,7 @@ import os
 import sys
 
 from config import (
-    STAT_WEIGHTS, LEVEL_DIVISOR,
+    LEGACY_STAT_WEIGHTS, LEVEL_DIVISOR,
     GRADE_LEVEL_RANGES,
     STAT_BASE, POINTS_PER_LEVEL,
 )
@@ -21,14 +21,16 @@ NO_POINTS = {"HP": 0, "ATK": 0, "DEF": 0}
 from fetch import CACHE_DIR, load_cache, normalize_repo, cache_path
 
 
-# 능력치 4개를 계산한다.
+# 레벨을 내기 위한 옛날 4능력치(ATK/DEF/AGI/STA)를 계산한다.
+# 카드에는 이 값이 찍히지 않는다 — calc_level() 에 더해 넘기는 용도로만 쓴다.
+# 카드에 찍는 성장 능력치(HP/ATK/DEF)는 calc_growth_stats() 가 따로 낸다.
 # 어떤 능력치가 어떤 기록에서 나오는지는 여기에 있고, 곱하는 값은 config.py 에 있다.
-def calc_stats(person):
+def calc_legacy_stats(person):
     raw = {
-        "ATK": person["additions"] * STAT_WEIGHTS["ATK"],
-        "DEF": person["deletions"] * STAT_WEIGHTS["DEF"],
-        "AGI": person["commits"] * STAT_WEIGHTS["AGI"],
-        "STA": person["active_weeks"] * STAT_WEIGHTS["STA"],
+        "ATK": person["additions"] * LEGACY_STAT_WEIGHTS["ATK"],
+        "DEF": person["deletions"] * LEGACY_STAT_WEIGHTS["DEF"],
+        "AGI": person["commits"] * LEGACY_STAT_WEIGHTS["AGI"],
+        "STA": person["active_weeks"] * LEGACY_STAT_WEIGHTS["STA"],
     }
 
     stats = {}
@@ -97,7 +99,7 @@ def print_table(title, people):
 
     rows = []
     for p in people:
-        stats = calc_stats(p)
+        stats = calc_legacy_stats(p)
         level = calc_level(stats)
         rows.append((p, stats, level))
 
